@@ -28,7 +28,7 @@ app.get("/", (req, res) => {
   res.send("Backend ATR funcionando 😎🔥");
 });
 
-// 🚀 Endpoint de prueba de DB
+// Endpoint de prueba de DB
 app.get("/test-db", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
@@ -38,17 +38,17 @@ app.get("/test-db", async (req, res) => {
   }
 });
 
-// 🚀 Mini test: inserta cliente, control, servicios e items
+// Mini test: inserta cliente, control, servicios e items
 app.get("/api/miniTest", async (req, res) => {
   try {
-    // 1️⃣ Insertar cliente
+    // Insertar cliente
     const clienteRes = await pool.query(
       "INSERT INTO clientes(nombre, ruc) VALUES($1, $2) RETURNING *",
       ["Fer Test", "123456"]
     );
     const cliente = clienteRes.rows[0];
 
-    // 2️⃣ Insertar control relacionado
+    // Insertar control
     const controlRes = await pool.query(
       `INSERT INTO controles(
         cliente_id, vehiculo, chapa, mecanico, fecha, factura,
@@ -58,7 +58,7 @@ app.get("/api/miniTest", async (req, res) => {
     );
     const control = controlRes.rows[0];
 
-    // 3️⃣ Insertar servicios realizados
+    // Insertar servicios realizados
     const servicios = [
       { servicio: "Cambio de aceite", monto: 100 },
       { servicio: "Alineación", monto: 200 }
@@ -70,7 +70,7 @@ app.get("/api/miniTest", async (req, res) => {
       );
     }
 
-    // 4️⃣ Insertar items utilizados
+    // Insertar items utilizados
     const items = [
       { codigo: "IT001", cantidad: 1, descripcion: "Filtro aceite", precio: 50 },
       { codigo: "IT002", cantidad: 2, descripcion: "Bujías", precio: 75 }
@@ -88,7 +88,7 @@ app.get("/api/miniTest", async (req, res) => {
   }
 });
 
-// 🔹 Obtener todos los clientes
+// Obtener todos los clientes
 app.get("/api/clientes", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM clientes ORDER BY id ASC");
@@ -98,35 +98,7 @@ app.get("/api/clientes", async (req, res) => {
   }
 });
 
-// 🔹 Obtener todos los controles con servicios e items
-app.get("/api/controles", async (req, res) => {
-  try {
-    const controlesRes = await pool.query("SELECT * FROM controles ORDER BY id ASC");
-    const controles = [];
-
-    for (let c of controlesRes.rows) {
-      const serviciosRes = await pool.query(
-        "SELECT * FROM servicios_realizados WHERE control_id=$1",
-        [c.id]
-      );
-      const itemsRes = await pool.query(
-        "SELECT * FROM items_utilizados WHERE control_id=$1",
-        [c.id]
-      );
-      controles.push({
-        ...c,
-        servicios: serviciosRes.rows,
-        items: itemsRes.rows
-      });
-    }
-
-    res.json({ ok: true, controles });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
-  }
-});
-
-// 🔹 Insertar un control completo desde frontend
+// Insertar un control completo desde frontend
 app.post("/api/insertControl", async (req, res) => {
   try {
     const { cliente_id, vehiculo, chapa, mecanico, fecha, factura, monto_total, monto_servicios, monto_items, diferencia, servicios, items } = req.body;
@@ -156,6 +128,34 @@ app.post("/api/insertControl", async (req, res) => {
     }
 
     res.json({ ok: true, mensaje: "Control completo insertado ATR!", control });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Obtener historial (igual que controles) -> Opción B
+app.get("/api/historial", async (req, res) => {
+  try {
+    const controlesRes = await pool.query("SELECT * FROM controles ORDER BY id ASC");
+    const historial = [];
+
+    for (let c of controlesRes.rows) {
+      const serviciosRes = await pool.query(
+        "SELECT * FROM servicios_realizados WHERE control_id=$1",
+        [c.id]
+      );
+      const itemsRes = await pool.query(
+        "SELECT * FROM items_utilizados WHERE control_id=$1",
+        [c.id]
+      );
+      historial.push({
+        ...c,
+        serviciosRealizados: serviciosRes.rows,
+        items: itemsRes.rows,
+      });
+    }
+
+    res.json(historial); // devuelve un array para frontend
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
