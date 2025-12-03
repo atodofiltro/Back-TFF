@@ -101,9 +101,9 @@ app.get("/api/clientes", async (req, res) => {
 // Insertar un control completo desde frontend
 app.post("/api/insertControl", async (req, res) => {
   try {
+    console.log("Datos recibidos:", req.body); // <--- log temporal
     const { cliente_id, vehiculo, chapa, mecanico, fecha, factura, monto_total, monto_servicios, monto_items, diferencia, servicios, items } = req.body;
 
-    // Insertar control
     const controlRes = await pool.query(
       `INSERT INTO controles(cliente_id, vehiculo, chapa, mecanico, fecha, factura, monto_total, monto_servicios, monto_items, diferencia)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
@@ -111,7 +111,6 @@ app.post("/api/insertControl", async (req, res) => {
     );
     const control = controlRes.rows[0];
 
-    // Insertar servicios
     for (let s of servicios) {
       await pool.query(
         "INSERT INTO servicios_realizados(control_id, servicio, monto) VALUES($1,$2,$3)",
@@ -119,7 +118,6 @@ app.post("/api/insertControl", async (req, res) => {
       );
     }
 
-    // Insertar items
     for (let i of items) {
       await pool.query(
         "INSERT INTO items_utilizados(control_id, codigo, cantidad, descripcion, precio) VALUES($1,$2,$3,$4,$5)",
@@ -129,9 +127,11 @@ app.post("/api/insertControl", async (req, res) => {
 
     res.json({ ok: true, mensaje: "Control completo insertado ATR!", control });
   } catch (error) {
+    console.error("ERROR EN /api/insertControl:", error); // <--- log para el error
     res.status(500).json({ ok: false, error: error.message });
   }
 });
+
 
 // Obtener historial (igual que controles) -> Opción B
 app.get("/api/historial", async (req, res) => {
