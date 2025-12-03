@@ -101,9 +101,25 @@ app.get("/api/clientes", async (req, res) => {
 // Insertar un control completo desde frontend
 app.post("/api/insertControl", async (req, res) => {
   try {
-    console.log("Datos recibidos:", req.body); // <--- log temporal
-    const { cliente_id, vehiculo, chapa, mecanico, fecha, factura, monto_total, monto_servicios, monto_items, diferencia, servicios, items } = req.body;
+    let { cliente, vehiculo, chapa, mecanico, fecha, factura, monto_total, monto_servicios, monto_items, diferencia, servicios, items } = req.body;
 
+    // Buscar si el cliente ya existe
+    let clienteRes = await pool.query("SELECT * FROM clientes WHERE nombre=$1 LIMIT 1", [cliente]);
+    let cliente_id;
+    if (clienteRes.rows.length > 0) {
+      cliente_id = clienteRes.rows[0].id;
+    } else {
+      // Insertar nuevo cliente
+      const nuevoClienteRes = await pool.query(
+        "INSERT INTO clientes(nombre) VALUES($1) RETURNING *",
+        [cliente]
+      );
+      cliente_id = nuevoClienteRes.rows[0].id;
+    }
+
+    console.log("Datos recibidos:", { cliente_id, vehiculo, chapa, mecanico, fecha, factura, monto_total, monto_servicios, monto_items, diferencia, servicios, items });
+
+    // Insertar control
     const controlRes = await pool.query(
       `INSERT INTO controles(cliente_id, vehiculo, chapa, mecanico, fecha, factura, monto_total, monto_servicios, monto_items, diferencia)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
@@ -111,6 +127,7 @@ app.post("/api/insertControl", async (req, res) => {
     );
     const control = controlRes.rows[0];
 
+    // Insertar servicios
     for (let s of servicios) {
       await pool.query(
         "INSERT INTO servicios_realizados(control_id, servicio, monto) VALUES($1,$2,$3)",
@@ -118,6 +135,7 @@ app.post("/api/insertControl", async (req, res) => {
       );
     }
 
+    // Insertar items
     for (let i of items) {
       await pool.query(
         "INSERT INTO items_utilizados(control_id, codigo, cantidad, descripcion, precio) VALUES($1,$2,$3,$4,$5)",
@@ -127,35 +145,45 @@ app.post("/api/insertControl", async (req, res) => {
 
     res.json({ ok: true, mensaje: "Control completo insertado ATR!", control });
   } catch (error) {
-    console.error("ERROR EN /api/insertControl:", error); // <--- log para el error
+    console.error("ERROR EN /api/insertControl:", error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });
 
-
-// Obtener historial (igual que controles) -> Opción B
+// Obtener historial (igual que controles)
 app.get("/api/historial", async (req, res) => {
   try {
     const controlesRes = await pool.query("SELECT * FROM controles ORDER BY id ASC");
     const historial = [];
 
     for (let c of controlesRes.rows) {
-      const serviciosRes = await pool.query(
-        "SELECT * FROM servicios_realizados WHERE control_id=$1",
-        [c.id]
-      );
-      const itemsRes = await pool.query(
-        "SELECT * FROM items_utilizados WHERE control_id=$1",
-        [c.id]
-      );
+      const clienteRes = await pool.query("SELECT * FROM clientes WHERE id=$1", [c.cliente_id]);
+      const serviciosRes = await pool.query("SELECT * FROM servicios_realizados WHERE control_id=$1", [c.id]);
+      const itemsRes = await pool.query("SELECT * FROM items_utilizados WHERE control_id=$1", [c.id]);
       historial.push({
         ...c,
+        cliente: clienteRes.rows[0]?.nombre || "N/A",
         serviciosRealizados: serviciosRes.rows,
         items: itemsRes.rows,
       });
     }
 
-    res.json(historial); // devuelve un array para frontend
+    res.json(historial);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Eliminar historial por control ID
+app.delete("/api/eliminar/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.query("DELETE FROM servicios_realizados WHERE control_id=$1", [id]);
+    await pool.query("DELETE FROM items_utilizados WHERE control_id=$1", [id]);
+    await pool.query("DELETE FROM controles WHERE id=$1", [id]);
+
+    res.json({ ok: true, mensaje: `Control ${id} eliminado correctamente` });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -163,4 +191,3 @@ app.get("/api/historial", async (req, res) => {
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`🔥 Servidor corriendo en puerto: ${PORT}`));
-
