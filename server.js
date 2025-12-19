@@ -1,193 +1,120 @@
 // server.js
 import express from "express";
 import cors from "cors";
-import pg from "pg";
-import dotenv from "dotenv";
-
-dotenv.config();
-
-const { Pool } = pg;
-
-// Configuración de la conexión a PostgreSQL en Railway
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // importante para Railway
-});
-
-pool.connect()
-  .then(() => console.log("✅ Conexión exitosa a la base de datos ATR!"))
-  .catch(err => console.error("❌ Error de conexión a la base de datos:", err));
+import fs from "fs";
+import path from "path";
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
-// Ruta principal
+// ====== DB JSON ======
+const DB_PATH = path.resolve("./db.json");
+
+function leerDB() {
+  if (!fs.existsSync(DB_PATH)) {
+    fs.writeFileSync(DB_PATH, JSON.stringify([]));
+  }
+  return JSON.parse(fs.readFileSync(DB_PATH, "utf-8"));
+}
+
+function guardarDB(data) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+}
+
+// ====== RUTA PRINCIPAL ======
 app.get("/", (req, res) => {
-  res.send("Backend ATR funcionando 😎🔥");
+  res.send("Backend ATR funcionando sin SQL 😎🔥");
 });
 
-// Endpoint de prueba de DB
-app.get("/test-db", async (req, res) => {
+// ====== INSERTAR CONTROL ======
+app.post("/api/insertControl", (req, res) => {
   try {
-    const result = await pool.query("SELECT NOW()");
-    res.json({ ok: true, hora: result.rows[0] });
-  } catch (error) {
-    res.json({ ok: false, error: error.message });
-  }
-});
+    const {
+      cliente,
+      ruc,
+      vehiculo,
+      chapa,
+      mecanico,
+      fecha,
+      factura,
+      monto_total,
+      monto_servicios,
+      monto_items,
+      diferencia,
+      servicios,
+      items
+    } = req.body;
 
-// Mini test: inserta cliente, control, servicios e items
-app.get("/api/miniTest", async (req, res) => {
-  try {
-    // Insertar cliente
-    const clienteRes = await pool.query(
-      "INSERT INTO clientes(nombre, ruc) VALUES($1, $2) RETURNING *",
-      ["Fer Test", "123456"]
-    );
-    const cliente = clienteRes.rows[0];
-
-    // Insertar control
-    const controlRes = await pool.query(
-      `INSERT INTO controles(
-        cliente_id, vehiculo, chapa, mecanico, fecha, factura,
-        monto_total, monto_servicios, monto_items, diferencia
-      ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [cliente.id, "Ford Fiesta", "ABC123", "Mecánico ATR", new Date(), "FAC001", 500, 300, 200, 0]
-    );
-    const control = controlRes.rows[0];
-
-    // Insertar servicios realizados
-    const servicios = [
-      { servicio: "Cambio de aceite", monto: 100 },
-      { servicio: "Alineación", monto: 200 }
-    ];
-    for (let s of servicios) {
-      await pool.query(
-        "INSERT INTO servicios_realizados(control_id, servicio, monto) VALUES($1,$2,$3)",
-        [control.id, s.servicio, s.monto]
-      );
-    }
-
-    // Insertar items utilizados
-    const items = [
-      { codigo: "IT001", cantidad: 1, descripcion: "Filtro aceite", precio: 50 },
-      { codigo: "IT002", cantidad: 2, descripcion: "Bujías", precio: 75 }
-    ];
-    for (let i of items) {
-      await pool.query(
-        "INSERT INTO items_utilizados(control_id, codigo, cantidad, descripcion, precio) VALUES($1,$2,$3,$4,$5)",
-        [control.id, i.codigo, i.cantidad, i.descripcion, i.precio]
-      );
-    }
-
-    res.json({ ok: true, mensaje: "Mini test insert completo ATR!", cliente, control });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
-  }
-});
-
-// Obtener todos los clientes
-app.get("/api/clientes", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM clientes ORDER BY id ASC");
-    res.json({ ok: true, datos: result.rows });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
-  }
-});
-
-// Insertar un control completo desde frontend
-app.post("/api/insertControl", async (req, res) => {
-  try {
-    let { cliente, vehiculo, chapa, mecanico, fecha, factura, monto_total, monto_servicios, monto_items, diferencia, servicios, items } = req.body;
-
-    // Buscar si el cliente ya existe
-    let clienteRes = await pool.query("SELECT * FROM clientes WHERE nombre=$1 LIMIT 1", [cliente]);
-    let cliente_id;
-    if (clienteRes.rows.length > 0) {
-      cliente_id = clienteRes.rows[0].id;
-    } else {
-      // Insertar nuevo cliente
-      const nuevoClienteRes = await pool.query(
-        "INSERT INTO clientes(nombre) VALUES($1) RETURNING *",
-        [cliente]
-      );
-      cliente_id = nuevoClienteRes.rows[0].id;
-    }
-
-    console.log("Datos recibidos:", { cliente_id, vehiculo, chapa, mecanico, fecha, factura, monto_total, monto_servicios, monto_items, diferencia, servicios, items });
-
-    // Insertar control
-    const controlRes = await pool.query(
-      `INSERT INTO controles(cliente_id, vehiculo, chapa, mecanico, fecha, factura, monto_total, monto_servicios, monto_items, diferencia)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [cliente_id, vehiculo, chapa, mecanico, fecha, factura, monto_total, monto_servicios, monto_items, diferencia]
-    );
-    const control = controlRes.rows[0];
-
-    // Insertar servicios
-    for (let s of servicios) {
-      await pool.query(
-        "INSERT INTO servicios_realizados(control_id, servicio, monto) VALUES($1,$2,$3)",
-        [control.id, s.servicio, s.monto]
-      );
-    }
-
-    // Insertar items
-    for (let i of items) {
-      await pool.query(
-        "INSERT INTO items_utilizados(control_id, codigo, cantidad, descripcion, precio) VALUES($1,$2,$3,$4,$5)",
-        [control.id, i.codigo, i.cantidad, i.descripcion, i.precio]
-      );
-    }
-
-    res.json({ ok: true, mensaje: "Control completo insertado ATR!", control });
-  } catch (error) {
-    console.error("ERROR EN /api/insertControl:", error);
-    res.status(500).json({ ok: false, error: error.message });
-  }
-});
-
-// Obtener historial (igual que controles)
-app.get("/api/historial", async (req, res) => {
-  try {
-    const controlesRes = await pool.query("SELECT * FROM controles ORDER BY id ASC");
-    const historial = [];
-
-    for (let c of controlesRes.rows) {
-      const clienteRes = await pool.query("SELECT * FROM clientes WHERE id=$1", [c.cliente_id]);
-      const serviciosRes = await pool.query("SELECT * FROM servicios_realizados WHERE control_id=$1", [c.id]);
-      const itemsRes = await pool.query("SELECT * FROM items_utilizados WHERE control_id=$1", [c.id]);
-      historial.push({
-        ...c,
-        cliente: clienteRes.rows[0]?.nombre || "N/A",
-        serviciosRealizados: serviciosRes.rows,
-        items: itemsRes.rows,
+    if (!cliente || !vehiculo || !chapa || !fecha) {
+      return res.status(400).json({
+        ok: false,
+        mensaje: "Faltan datos obligatorios"
       });
     }
 
-    res.json(historial);
+    const db = leerDB();
+
+    const nuevoControl = {
+      id: db.length + 1,
+      cliente,
+      ruc,
+      vehiculo,
+      chapa,
+      mecanico,
+      fecha,
+      factura,
+      monto_total,
+      monto_servicios,
+      monto_items,
+      diferencia,
+      servicios: servicios || [],
+      items: items || [],
+      creadoEn: new Date().toISOString()
+    };
+
+    db.push(nuevoControl);
+    guardarDB(db);
+
+    console.log("✅ Control guardado ATR:", nuevoControl);
+
+    res.json({
+      ok: true,
+      mensaje: "Control guardado correctamente",
+      control: nuevoControl
+    });
   } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
+    console.error("ERROR /api/insertControl:", error);
+    res.status(500).json({ ok: false, error: "Error interno" });
   }
 });
 
-// Eliminar historial por control ID
-app.delete("/api/eliminar/:id", async (req, res) => {
+// ====== HISTORIAL ======
+app.get("/api/historial", (req, res) => {
   try {
-    const { id } = req.params;
-
-    await pool.query("DELETE FROM servicios_realizados WHERE control_id=$1", [id]);
-    await pool.query("DELETE FROM items_utilizados WHERE control_id=$1", [id]);
-    await pool.query("DELETE FROM controles WHERE id=$1", [id]);
-
-    res.json({ ok: true, mensaje: `Control ${id} eliminado correctamente` });
+    const db = leerDB();
+    res.json(db);
   } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
+    res.status(500).json({ ok: false, error: "No se pudo leer historial" });
   }
 });
 
+// ====== ELIMINAR CONTROL ======
+app.delete("/api/eliminar/:id", (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = leerDB();
+    const nuevoDB = db.filter(c => c.id !== id);
+    guardarDB(nuevoDB);
+
+    res.json({ ok: true, mensaje: "Control eliminado" });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "No se pudo eliminar" });
+  }
+});
+
+// ====== SERVER ======
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`🔥 Servidor corriendo en puerto: ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🔥 Servidor corriendo en puerto: ${PORT}`);
+});
